@@ -40,6 +40,26 @@ const TEST_DB_USER: &str = "admin";
 const TEST_DB_PW: &str = "password";
 const DEFAULT_TIME_OUT: u64 = 10;
 
+
+async fn is_accepted(request: RequestBuilder) -> bool {
+    if let Ok(res) = request.send().await {
+        res.status() == StatusCode::ACCEPTED
+    }
+    false
+}
+
+async fn is_ok(request: RequestBuilder) -> bool {
+    if let Ok(res) = request.send().await {
+        match res.status() {
+            StatusCode::OK | StatusCode::NOT_MODIFIED => true,
+            _ => false,
+        }
+    }
+    false
+}
+
+
+
 impl Client {
     /// new creates a new Couch client with a default timeout of 10 seconds.
     /// The timeout is applied from when the request starts connecting until the response body has finished.
@@ -283,37 +303,31 @@ impl Client {
         method: Method,
         path: String,
         opts: Option<HashMap<String, String>>,
-    ) -> CouchResult<RequestBuilder> {
-        let uri = self.create_path(path, opts)?;
-        let req = self
-            ._client
+    ) -> RequestBuilder {
+        let uri = self.create_path(path, opts);
+        self._client
             .request(method, &uri)
-            .headers(construct_json_headers(Some(&uri)));
+            .headers(construct_json_headers(Some(&uri)))
 
-        // req.header(reqwest::header::Referer::new(uri.clone()));
-
-        Ok(req)
     }
 
-    pub(crate) fn get(&self, path: String, args: Option<HashMap<String, String>>) -> CouchResult<RequestBuilder> {
-        Ok(self.req(Method::GET, path, args)?)
+    pub(crate) fn get(&self, path: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
+        self.req(Method::GET, path, args)
     }
 
-    pub(crate) fn post(&self, path: String, body: String) -> CouchResult<RequestBuilder> {
-        let req = self.req(Method::POST, path, None)?.body(body);
-        Ok(req)
+    pub(crate) fn post(&self, path: String, body: String) -> RequestBuilder {
+        self.req(Method::POST, path, None).body(body)
     }
 
-    pub(crate) fn put(&self, path: String, body: String) -> CouchResult<RequestBuilder> {
-        let req = self.req(Method::PUT, path, None)?.body(body);
-        Ok(req)
+    pub(crate) fn put(&self, path: String, body: String) -> RequestBuilder {
+        self.req(Method::PUT, path, None).body(body)
     }
 
-    pub(crate) fn head(&self, path: String, args: Option<HashMap<String, String>>) -> CouchResult<RequestBuilder> {
-        Ok(self.req(Method::HEAD, path, args)?)
+    pub(crate) fn head(&self, path: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
+        self.req(Method::HEAD, path, args)
     }
 
-    pub(crate) fn delete(&self, path: String, args: Option<HashMap<String, String>>) -> CouchResult<RequestBuilder> {
-        Ok(self.req(Method::DELETE, path, args)?)
+    pub(crate) fn delete(&self, path: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
+        self.req(Method::DELETE, path, args)
     }
 }

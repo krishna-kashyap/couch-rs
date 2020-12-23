@@ -13,6 +13,8 @@ use serde_json::{json, to_string, Value};
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 
+use crate::client::{is_accepted, is_ok};
+
 /// Database operations on a CouchDB Database
 /// (sometimes called Collection in other NoSQL flavors such as MongoDB).
 #[derive(Debug, Clone)]
@@ -66,36 +68,13 @@ impl Database {
         format!("{}/_compact/{}", self.name, encoded_design)
     }
 
-    async fn is_accepted(&self, request: CouchResult<RequestBuilder>) -> bool {
-        if let Ok(req) = request {
-            if let Ok(res) = req.send().await {
-                return res.status() == StatusCode::ACCEPTED;
-            }
-        }
-
-        false
-    }
-
-    async fn is_ok(&self, request: CouchResult<RequestBuilder>) -> bool {
-        if let Ok(req) = request {
-            if let Ok(res) = req.send().await {
-                return match res.status() {
-                    StatusCode::OK | StatusCode::NOT_MODIFIED => true,
-                    _ => false,
-                };
-            }
-        }
-
-        false
-    }
-
     /// Launches the compact process
     pub async fn compact(&self) -> bool {
         let mut path: String = self.name.clone();
         path.push_str("/_compact");
 
         let request = self._client.post(path, "".into());
-        self.is_accepted(request).await
+        is_accepted(request).await
     }
 
     /// Starts the compaction of all views
@@ -104,13 +83,13 @@ impl Database {
         path.push_str("/_view_cleanup");
 
         let request = self._client.post(path, "".into());
-        self.is_accepted(request).await
+        is_accepted(request).await
     }
 
     /// Starts the compaction of a given index
     pub async fn compact_index(&self, index: &str) -> bool {
         let request = self._client.post(self.create_compact_path(index), "".into());
-        self.is_accepted(request).await
+        is_accepted(request).await
     }
 
     /// Checks if a document ID exists
@@ -136,7 +115,7 @@ impl Database {
     /// ```
     pub async fn exists(&self, id: &str) -> bool {
         let request = self._client.head(self.create_document_path(id), None);
-        self.is_ok(request).await
+        is_ok(request).await
     }
 
     /// Convenience wrapper around get::<Value>(id)
@@ -506,12 +485,7 @@ impl Database {
         &self,
         params: Option<QueryParams>,
     ) -> CouchResult<DocumentCollection<T>> {
-        let mut options;
-        if let Some(opts) = params {
-            options = opts;
-        } else {
-            options = QueryParams::default();
-        }
+        let mut options = params.unwrap_or_default()
 
         options.include_docs = Some(true);
 
@@ -723,15 +697,9 @@ impl Database {
 
         match data.ok {
             Some(true) => {
-                let data_id = match data.id {
-                    Some(id) => id,
-                    _ => return Err(CouchError::new(s!("invalid id"), status)),
-                };
+                let data_id = data.id.ok_or_else( || CouchError::new(s!("invalid id"), status))?;
 
-                let data_rev = match data.rev {
-                    Some(rev) => rev,
-                    _ => return Err(CouchError::new(s!("invalid rev"), status)),
-                };
+                let data_rev = data.rev.ok_or_else(|| CouchError::new(s!("invalid rev"), status))?;
 
                 doc.set_id(&data_id);
                 doc.set_rev(&data_rev);
@@ -1020,7 +988,7 @@ impl Database {
 
     /// Reads the database's indexes and returns them
     pub async fn read_indexes(&self) -> CouchResult<DatabaseIndexList> {
-        let response = self._client.get(self.create_raw_path("_index"), None)?.send().await?;
+        let response = self._client.get(self.create_raw_path("_index"), None).send().await?;
         Ok(response.json().await?)
     }
 
