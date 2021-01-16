@@ -341,47 +341,36 @@ impl Database {
         batch_size: u64,
         max_results: u64,
     ) -> CouchResult<u64> {
-        let mut bookmark = Option::None;
+        let mut segment_query = query.clone();
         let limit = if batch_size > 0 { batch_size } else { 1000 };
 
         let mut results: u64 = 0;
         query.limit = Option::Some(limit);
 
-        let maybe_err = loop {
-            let mut segment_query = query.clone();
-            segment_query.bookmark = bookmark.clone();
-            let all_docs = match self.find(&segment_query).await {
-                Ok(docs) => docs,
-                Err(err) => break Some(err),
-            };
+        loop {
+            let all_docs = self.find(&segment_query).await?;
 
             if all_docs.total_rows == 0 {
                 // no more rows
-                break None;
+                break Ok(results);
             }
 
-            if all_docs.bookmark.is_some() && all_docs.bookmark != bookmark {
-                bookmark.replace(all_docs.bookmark.clone().unwrap_or_default());
+            if all_docs.bookmark.is_some() && all_docs.bookmark != segment_query.bookmark {
+                segment_query.bookmark.replace(all_docs.bookmark.clone().unwrap_or_default());
             } else {
                 // no bookmark, break the query loop
-                break None;
+                break Ok(results);
             }
 
             results += all_docs.total_rows as u64;
 
             if let Err(_err) = tx.send(all_docs).await {
-                break None;
+                break Ok(results);
             }
 
             if max_results > 0 && results >= max_results {
-                break None;
+                break Ok(results);
             }
-        };
-
-        if let Some(err) = maybe_err {
-            Err(err)
-        } else {
-            Ok(results)
         }
     }
 
