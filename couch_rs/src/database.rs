@@ -32,6 +32,10 @@ impl Database {
         &self.name
     }
 
+    pub fn is_partitioned(&self) -> &bool {
+        &self.partitioned
+    }
+
     fn create_raw_path(&self, id: &str) -> String {
         format!("{}/{}", self.name, id)
     }

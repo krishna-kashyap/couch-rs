@@ -213,37 +213,35 @@ impl Client {
 
     }
 
-    /// Connect to an existing database, or create a new one, when this one does not exist.
-    pub async fn db(&self, dbname: &str) -> CouchResult<Database> {
+    async fn ensure_db(&self, dbname: &str, partitioned: bool) -> CouchResult<Database> {
         let db_info_res = self.get_info(dbname).await;
         match db_info_res {
-            Ok(db_info) => Ok(Database::new(db_info.db_name, self.clone(), db_info.props.partitioned.unwrap_or_default())),
+            Ok(db_info) => {
+                match db_info.props.partitioned.unwrap_or_default() {
+                    true => Ok(Database::new(db_info.db_name, self.clone(), true)),
+                    false => match partitioned {
+                        true => Err(CouchError::new(s!("database is not partitioned!"), StatusCode::CONFLICT)),
+                        false => Ok(Database::new(db_info.db_name, self.clone(), false))
+                    }
+                }
+            }
             Err(err) => {
                 match err.status {
-                    StatusCode::NOT_FOUND => self.make_db(dbname).await,
+                    StatusCode::NOT_FOUND => self._make_db(dbname, partitioned).await,
                     _ => Err(err)
                 }
             }
         }
     }
 
+    /// Connect to an existing database, or create a new one, when this one does not exist.
+    pub async fn db(&self, dbname: &str) -> CouchResult<Database> {
+        self.ensure_db(dbname, false).await
+    }
+
     /// Connect to an existing partitioned database, or create a new one, when this one does not exist.
     pub async fn partitioned_db(&self, dbname: &str) -> CouchResult<Database> {
-        let db_info_res = self.get_info(dbname).await;
-        match db_info_res {
-            Ok(db_info) => {
-                match db_info.props.partitioned.unwrap_or_default() {
-                    true => Ok(Database::new(db_info.db_name, self.clone(), true)),
-                    false => Err(CouchError::new(s!("database is not partitioned!"), StatusCode::CONFLICT))
-                }
-            }
-            Err(err) => {
-                match err.status {
-                    StatusCode::NOT_FOUND => self.make_partitioned_db(dbname).await,
-                    _ => Err(err)
-                }
-            }
-        }
+        self.ensure_db(dbname, true).await
     }
 
     /// Destroy the database with the given name

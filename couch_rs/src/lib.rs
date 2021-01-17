@@ -242,7 +242,7 @@ mod couch_rs_tests {
             let dbw = client.db(dbname).await;
             assert!(dbw.is_ok());
 
-            //teardown(client, dbname).await;
+            teardown(client, dbname).await;
         }
 
         #[tokio::test]
@@ -252,6 +252,30 @@ mod couch_rs_tests {
             assert!(dbw.is_ok());
 
             teardown(client, "should_create_partitioned_test_db").await;
+        }
+
+        #[tokio::test]
+        async fn explicit_partitioned_must_error_non_partitioned() {
+            let dbname = "should_create_test_db";
+            let client = Client::new_local_test().unwrap();
+            let dbw = client.db(dbname).await;
+            assert!(dbw.is_ok());
+
+            assert!(client.partitioned_db(dbname).await.is_err());
+
+            teardown(client, dbname).await;
+        }
+
+        #[tokio::test]
+        async fn should_set_partitioned_when_partitioned_db_exists() {
+            let dbname = "should_create_test_partitioned_db";
+            let client = Client::new_local_test().unwrap();
+            let dbw = client.partitioned_db(dbname).await.unwrap();
+
+            assert!(dbw.is_partitioned());
+            assert!(client.db(dbname).await.unwrap().is_partitioned());
+
+            teardown(client, dbname).await;
         }
 
         #[tokio::test]
