@@ -216,8 +216,13 @@ mod couch_rs_tests {
         pub last_name: String,
     }
 
+    pub async fn teardown(client: couch_rs::Client, dbname: &str) {
+        assert!(client.destroy_db(dbname).await.unwrap())
+    }
+
     mod client_tests {
         use crate::client::Client;
+        use crate::couch_rs_tests::teardown;
         use crate::couch_rs_tests::TestDoc;
         use reqwest::StatusCode;
         use serde_json::json;
@@ -232,11 +237,12 @@ mod couch_rs_tests {
 
         #[tokio::test]
         async fn should_create_test_db() {
+            let dbname = "should_create_test_db";
             let client = Client::new_local_test().unwrap();
-            let dbw = client.db("should_create_test_db").await;
+            let dbw = client.db(dbname).await;
             assert!(dbw.is_ok());
 
-            let _ = client.destroy_db("should_create_test_db");
+            //teardown(client, dbname).await;
         }
 
         #[tokio::test]
@@ -245,7 +251,7 @@ mod couch_rs_tests {
             let dbw = client.partitioned_db("should_create_partitioned_test_db").await;
             assert!(dbw.is_ok());
 
-            let _ = client.destroy_db("should_create_partitioned_test_db");
+            teardown(client, "should_create_partitioned_test_db").await;
         }
 
         #[tokio::test]
@@ -265,7 +271,7 @@ mod couch_rs_tests {
             assert!(client.exists(dbname).await.is_ok());
             let info = client.get_info(dbname).await.expect("can not get db info");
             assert_eq!(info.db_name, dbname);
-            client.destroy_db(dbname);
+            teardown(client, dbname).await;
         }
 
         #[tokio::test]
@@ -286,7 +292,7 @@ mod couch_rs_tests {
             let mut doc = ndoc_result.unwrap();
             assert_eq!(doc["thing"], json!(true));
 
-            let _ = client.destroy_db("should_create_a_document");
+            teardown(client, "should_create_a_document").await;
         }
 
         #[tokio::test]
@@ -311,7 +317,7 @@ mod couch_rs_tests {
             assert!(!doc._id.is_empty());
             assert!(doc._rev.starts_with("1-"));
 
-            let _ = client.destroy_db("should_create_a_typed_document");
+            teardown(client,"should_create_a_typed_document").await;
         }
 
         #[tokio::test]
@@ -347,7 +353,7 @@ mod couch_rs_tests {
             assert!(second_result.is_err());
             assert_eq!(second_result.err().unwrap().status, StatusCode::CONFLICT);
 
-            let _ = client.destroy_db(dbname);
+            teardown(client, dbname).await;
         }
 
         #[tokio::test]
@@ -360,6 +366,7 @@ mod couch_rs_tests {
     }
 
     mod database_tests {
+        use crate::couch_rs_tests::teardown;
         use crate::client::Client;
         use crate::database::Database;
         use crate::document::{DocumentCollection, TypedCouchDocument};
@@ -413,10 +420,6 @@ mod couch_rs_tests {
             }
 
             (client, db, docs)
-        }
-
-        async fn teardown(client: Client, dbname: &str) {
-            assert!(client.destroy_db(dbname).await.unwrap())
         }
 
         #[tokio::test]
