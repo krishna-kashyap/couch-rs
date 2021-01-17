@@ -19,11 +19,12 @@ use tokio::sync::mpsc::Sender;
 pub struct Database {
     _client: Client,
     name: String,
+    partitioned: bool
 }
 
 impl Database {
-    pub fn new(name: String, client: Client) -> Database {
-        Database { _client: client, name }
+    pub fn new(name: String, client: Client, partitioned: bool) -> Database {
+        Database { _client: client, name, partitioned }
     }
 
     // convenience function to retrieve the name of the database
@@ -71,7 +72,7 @@ impl Database {
         let mut path: String = self.name.clone();
         path.push_str("/_compact");
 
-        let request = self._client.post(path, "".into());
+        let request = self._client.post(path, "".into(), None);
         is_accepted(request).await
     }
 
@@ -80,13 +81,13 @@ impl Database {
         let mut path: String = self.name.clone();
         path.push_str("/_view_cleanup");
 
-        let request = self._client.post(path, "".into());
+        let request = self._client.post(path, "".into(), None);
         is_accepted(request).await
     }
 
     /// Starts the compaction of a given index
     pub async fn compact_index(&self, index: &str) -> bool {
-        let request = self._client.post(self.create_compact_path(index), "".into());
+        let request = self._client.post(self.create_compact_path(index), "".into(), None);
         is_accepted(request).await
     }
 
@@ -230,7 +231,7 @@ impl Database {
 
         let response = self
             ._client
-            .post(self.create_raw_path("_bulk_docs"), to_string(&body)?)
+            .post(self.create_raw_path("_bulk_docs"), to_string(&body)?, None)
             .send()
             .await?;
 
@@ -291,7 +292,7 @@ impl Database {
 
         let response = self
             ._client
-            .post(self.create_raw_path("_all_docs"), to_string(&options)?)
+            .post(self.create_raw_path("_all_docs"), to_string(&options)?, None)
             .send()
             .await?
             .error_for_status()?;
@@ -445,7 +446,7 @@ impl Database {
         // to a GET call. It provides the same functionality
         let response = self
             ._client
-            .post(view_path, js!(&queries))
+            .post(view_path, js!(&queries), None)
             .send()
             .await?
             .error_for_status()?;
@@ -472,7 +473,7 @@ impl Database {
         // to a GET call. It provides the same functionality
         let response = self
             ._client
-            .post(self.create_raw_path("_all_docs"), js!(&options))
+            .post(self.create_raw_path("_all_docs"), js!(&options), None)
             .send()
             .await?
             .error_for_status()?;
@@ -540,7 +541,7 @@ impl Database {
     /// ```
     pub async fn find<T: TypedCouchDocument>(&self, query: &FindQuery) -> CouchResult<DocumentCollection<T>> {
         let path = self.create_raw_path("_find");
-        let response = self._client.post(path, js!(query)).send().await?;
+        let response = self._client.post(path, js!(query), None).send().await?;
         let status = response.status();
         let data: FindResult<T> = response.json().await?;
 
@@ -624,7 +625,7 @@ impl Database {
     pub async fn save<T: TypedCouchDocument>(&self, mut doc: T) -> CouchResult<T> {
         let id = doc.get_id().to_string();
         let body = to_string(&doc)?;
-        let response = self._client.put(self.create_document_path(&id), body).send().await?;
+        let response = self._client.put(self.create_document_path(&id), body, None).send().await?;
         let status = response.status();
         let data: DocumentCreatedResponse = response.json().await?;
 
@@ -669,7 +670,7 @@ impl Database {
     /// }
     /// ```
     pub async fn create<T: TypedCouchDocument>(&self, mut doc: T) -> CouchResult<T> {
-        let response = self._client.post(self.name.clone(), to_string(&doc)?).send().await?;
+        let response = self._client.post(self.name.clone(), to_string(&doc)?, None).send().await?;
 
         let status = response.status();
         let data: DocumentCreatedResponse = response.json().await?;
@@ -778,7 +779,7 @@ impl Database {
         let doc: Value = views.into();
         let response = self
             ._client
-            .put(self.create_design_path(design_name), to_string(&doc)?)
+            .put(self.create_design_path(design_name), to_string(&doc)?, None)
             .send()
             .await?;
 
@@ -861,7 +862,7 @@ impl Database {
         }
 
         self._client
-            .post(self.create_query_view_path(design_name, view_name), js!(&options))
+            .post(self.create_query_view_path(design_name, view_name), js!(&options), None)
             .send()
             .await?
             .error_for_status()?
@@ -884,7 +885,7 @@ impl Database {
         };
 
         self._client
-            .put(self.create_execute_update_path(design_id, name, document_id), body)
+            .put(self.create_execute_update_path(design_id, name, document_id), body, None)
             .send()
             .await?
             .error_for_status()?
@@ -941,6 +942,7 @@ impl Database {
                     "name": name,
                     "index": spec
                 })),
+                None,
             )
             .send()
             .await?;
@@ -1002,7 +1004,7 @@ mod tests {
     #[test]
     fn test_document_paths() {
         let client = Client::new_local_test().unwrap();
-        let db = Database::new("testdb".to_string(), client);
+        let db = Database::new("testdb".to_string(), client, false);
         let p = db.create_raw_path("123");
         assert_eq!(p, "testdb/123");
         let p = db.create_document_path("1+3");

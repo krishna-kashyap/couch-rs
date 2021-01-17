@@ -240,6 +240,15 @@ mod couch_rs_tests {
         }
 
         #[tokio::test]
+        async fn should_create_partitioned_test_db() {
+            let client = Client::new_local_test().unwrap();
+            let dbw = client.partitioned_db("should_create_partitioned_test_db").await;
+            assert!(dbw.is_ok());
+
+            let _ = client.destroy_db("should_create_partitioned_test_db");
+        }
+
+        #[tokio::test]
         async fn should_create_test_db_with_a_complex_name() {
             let client = Client::new_local_test().unwrap();
             let dbname = "some+database";
@@ -256,7 +265,7 @@ mod couch_rs_tests {
             assert!(client.exists(dbname).await.is_ok());
             let info = client.get_info(dbname).await.expect("can not get db info");
             assert_eq!(info.db_name, dbname);
-            let _ = client.destroy_db(dbname);
+            client.destroy_db(dbname);
         }
 
         #[tokio::test]

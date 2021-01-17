@@ -45,7 +45,7 @@ pub struct SizeInfo {
 /// Database information
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DbProperties {
-    partitioned: Option<bool>,
+    pub partitioned: Option<bool>,
 }
 
 /// Database information

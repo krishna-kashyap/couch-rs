@@ -174,32 +174,20 @@ impl Client {
         self.db_prefix.clone() + dbname
     }
 
-    /// Connect to an existing database, or create a new one, when this one does not exist.
-    pub async fn db(&self, dbname: &str) -> CouchResult<Database> {
+    async fn _make_db(&self, dbname: &str, partitioned: bool) -> CouchResult<Database> {
         let name = self.build_dbname(dbname);
 
-        let db = Database::new(name.clone(), self.clone());
-
-        let head_response = self
-            .head(name, None)
-            .headers(construct_json_headers(None))
-            .send()
-            .await?;
-
-        match head_response.status() {
-            StatusCode::OK => Ok(db),
-            _ => self.make_db(dbname).await,
-        }
-    }
-
-    /// Create a new database with the given name
-    pub async fn make_db(&self, dbname: &str) -> CouchResult<Database> {
-        let name = self.build_dbname(dbname);
-
-        let db = Database::new(name.clone(), self.clone());
+        let query_params = match partitioned {
+            true => {
+                let mut params = HashMap::new();
+                params.insert("partitioned".to_string(), "true".to_string());
+                Some(params)
+            }
+            false => None
+        };
 
         let put_response = self
-            .put(name, String::default())
+            .put(name.clone(), String::default(), query_params)
             .headers(construct_json_headers(None))
             .send()
             .await?;
@@ -208,10 +196,52 @@ impl Client {
         let s: CouchResponse = put_response.json().await?;
 
         match s.ok {
-            Some(true) => Ok(db),
-            _ => {
-                let err = s.error.unwrap_or_else(|| s!("unspecified error"));
-                Err(CouchError::new(err, status))
+            Some(true) => Ok(Database::new(name, self.clone(), partitioned)),
+            _ => Err(CouchError::new(s.error.unwrap_or_else(|| s!("unspecified error")), status))
+        }
+    }
+
+    /// Create a new database with the given name
+    pub async fn make_db(&self, dbname: &str) -> CouchResult<Database> {
+        self._make_db(dbname, false).await
+
+    }
+
+    /// Create a new partitioned database with the given name
+    pub async fn make_partitioned_db(&self, dbname: &str) -> CouchResult<Database> {
+        self._make_db(dbname, true).await
+
+    }
+
+    /// Connect to an existing database, or create a new one, when this one does not exist.
+    pub async fn db(&self, dbname: &str) -> CouchResult<Database> {
+        let db_info_res = self.get_info(dbname).await;
+        match db_info_res {
+            Ok(db_info) => Ok(Database::new(db_info.db_name, self.clone(), db_info.props.partitioned.unwrap_or_default())),
+            Err(err) => {
+                match err.status {
+                    StatusCode::NOT_FOUND => self.make_db(dbname).await,
+                    _ => Err(err)
+                }
+            }
+        }
+    }
+
+    /// Connect to an existing partitioned database, or create a new one, when this one does not exist.
+    pub async fn partitioned_db(&self, dbname: &str) -> CouchResult<Database> {
+        let db_info_res = self.get_info(dbname).await;
+        match db_info_res {
+            Ok(db_info) => {
+                match db_info.props.partitioned.unwrap_or_default() {
+                    true => Ok(Database::new(db_info.db_name, self.clone(), true)),
+                    false => Err(CouchError::new(s!("database is not partitioned!"), StatusCode::CONFLICT))
+                }
+            }
+            Err(err) => {
+                match err.status {
+                    StatusCode::NOT_FOUND => self.make_partitioned_db(dbname).await,
+                    _ => Err(err)
+                }
             }
         }
     }
@@ -300,12 +330,12 @@ impl Client {
         self.req(Method::GET, path, args)
     }
 
-    pub(crate) fn post(&self, path: String, body: String) -> RequestBuilder {
-        self.req(Method::POST, path, None).body(body)
+    pub(crate) fn post(&self, path: String, body: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
+        self.req(Method::POST, path, args).body(body)
     }
 
-    pub(crate) fn put(&self, path: String, body: String) -> RequestBuilder {
-        self.req(Method::PUT, path, None).body(body)
+    pub(crate) fn put(&self, path: String, body: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
+        self.req(Method::PUT, path, args).body(body)
     }
 
     pub(crate) fn head(&self, path: String, args: Option<HashMap<String, String>>) -> RequestBuilder {
