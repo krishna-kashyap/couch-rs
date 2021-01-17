@@ -280,8 +280,7 @@ impl Client {
     /// }
     /// ```
     pub async fn exists(&self, dbname: &str) -> CouchResult<bool> {
-        let result = self.head(self.build_dbname(dbname), None).send().await;
-        Ok(result.is_ok())
+        Ok(self.head(self.build_dbname(dbname), None).send().await?.error_for_status().is_ok())
     }
 
     /// Gets information about the specified database.
