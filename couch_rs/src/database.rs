@@ -41,8 +41,7 @@ impl Database {
     }
 
     fn create_document_path(&self, id: &str) -> String {
-        let encoded = url_encode!(id);
-        format!("{}/{}", self.name, encoded)
+        self.create_raw_path(&url_encode!(id))
     }
 
     fn create_design_path(&self, id: &str) -> String {
@@ -243,6 +242,23 @@ impl Database {
         Ok(data.into_iter().map(|r| r.into()).collect())
     }
 
+    async fn _get_all_params<T: TypedCouchDocument>(
+        &self,
+        params: QueryParams,
+    ) -> CouchResult<DocumentCollection<T>> {
+
+        // we use POST here, because this allows for a larger set of keys to be provided, compared
+        // to a GET call. It provides the same functionality
+        let response = self
+            ._client
+            .post(self.create_raw_path("_all_docs"), js!(&params), None)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(DocumentCollection::new(response.json().await?))
+    }
+
     /// Gets documents in bulk with provided IDs list, with added params. Params description can be found here:
     /// [_all_docs](https://docs.couchdb.org/en/latest/api/database/bulk-api.html?highlight=_all_docs)
     ///
@@ -291,17 +307,9 @@ impl Database {
     ) -> CouchResult<DocumentCollection<T>> {
         let mut options = params.unwrap_or_default();
 
-        options.include_docs = Some(true);
         options.keys = ids;
 
-        let response = self
-            ._client
-            .post(self.create_raw_path("_all_docs"), to_string(&options)?, None)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        Ok(DocumentCollection::new(response.json().await?))
+        self.get_all_params(Some(options)).await
     }
 
     /// Gets all the documents in database
@@ -473,16 +481,7 @@ impl Database {
 
         options.include_docs = Some(true);
 
-        // we use POST here, because this allows for a larger set of keys to be provided, compared
-        // to a GET call. It provides the same functionality
-        let response = self
-            ._client
-            .post(self.create_raw_path("_all_docs"), js!(&options), None)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        Ok(DocumentCollection::new(response.json().await?))
+        self._get_all_params(options).await
     }
 
     /// Finds a document in the database through a Mango query as raw Values.
