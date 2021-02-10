@@ -180,6 +180,21 @@ mod macros {
             url::form_urlencoded::byte_serialize($id.as_bytes()).collect::<String>()
         }};
     }
+
+    macro_rules! ensure_partitioned {
+        ($db:expr, $f:block) => {{
+            if !$db.partitioned {
+                Err(CouchError::new(s!("The database must be partitioned!"), reqwest::StatusCode::NOT_IMPLEMENTED))
+            } else { $f }
+        }};
+        ($db:expr, $f:expr) => {{
+            if !$db.partitioned {
+                Err(CouchError::new(s!("The database must be partitioned!"), reqwest::StatusCode::NOT_IMPLEMENTED))
+            } else { $f }
+        }};
+
+   }
+ 
 }
 
 mod client;

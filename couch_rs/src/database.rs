@@ -80,9 +80,7 @@ impl Database {
     }
 
     pub async fn get_partition_info(&self, partition: &str) -> CouchResult<PartitionInfo> {
-        if !self.partitioned {
-            Err(CouchError::new(s!("The database must be partitioned!"), reqwest::StatusCode::NOT_IMPLEMENTED))
-        } else {
+        ensure_partitioned!(self, {
             let response = self._client
                 .get(self.create_partition_path(partition, None), None)
                 .send()
@@ -90,8 +88,9 @@ impl Database {
                 .error_for_status()?;
             let info = response.json().await?;
             Ok(info)
-        }
+        })
     }
+
 
     /// Launches the compact process
     pub async fn compact(&self) -> bool {
@@ -341,10 +340,23 @@ impl Database {
         self.get_all_params(None).await
     }
 
+
+    /// Gets all the documents from a partition in database
+    pub async fn get_all_partitioned<T: TypedCouchDocument>(&self, partition: &str) -> CouchResult<DocumentCollection<T>> {
+        self.get_all_params_partitioned(partition, None).await
+    }
+
+
     /// Gets all the documents in database as raw Values
     pub async fn get_all_raw(&self) -> CouchResult<DocumentCollection<Value>> {
-        self.get_all_params(None).await
+        self.get_all_params_raw(None).await
     }
+
+    /// Gets all the documents from partition in database as raw Values
+    pub async fn get_all_raw_partitioned(&self, partition: &str) -> CouchResult<DocumentCollection<Value>> {
+        self.get_all_params_raw_partitioned(partition, None).await
+    }
+
 
     /// Gets all documents in the database, using bookmarks to iterate through all the documents.
     /// Results are returned through an mpcs channel for async processing. Use this for very large
@@ -495,6 +507,16 @@ impl Database {
         self.get_all_params(params).await
     }
 
+
+    pub async fn get_all_params_raw_partitioned(
+        &self,
+        partition: &str, 
+        params: Option<QueryParams>
+    ) -> CouchResult<DocumentCollection<Value>> {
+        self.get_all_params_partitioned(partition, params).await
+    }
+
+
     /// Gets all the documents in database, with applied parameters.
     /// Parameters description can be found here: [api-ddoc-view](https://docs.couchdb.org/en/latest/api/ddoc/views.html#api-ddoc-view)
     pub async fn get_all_params<T: TypedCouchDocument>(
@@ -507,6 +529,21 @@ impl Database {
 
         self.get_documents(self.create_raw_path("_all_docs"), options).await
     }
+
+    pub async fn get_all_params_partitioned<T: TypedCouchDocument>(
+        &self,
+        partition: &str,
+        params: Option<QueryParams>,
+    ) -> CouchResult<DocumentCollection<T>> {
+        ensure_partitioned!(self, {
+            let mut options = params.unwrap_or_default();
+            options.include_docs = Some(true);
+
+            let all_docs = "_all_docs";
+            self.get_documents(self.create_partition_path(partition, Some(&url_encode!(all_docs))), options).await
+        })
+    }
+
 
     /// Finds a document in the database through a Mango query as raw Values.
     /// Convenience function for find::<Value>(query)
@@ -531,6 +568,7 @@ impl Database {
     pub async fn find_raw(&self, query: &FindQuery) -> CouchResult<DocumentCollection<Value>> {
         self.find(query).await
     }
+
 
     /// Finds a document in the database through a Mango query.
     ///
