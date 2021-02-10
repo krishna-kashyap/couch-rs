@@ -4,6 +4,7 @@ use crate::document::{DocumentCollection, TypedCouchDocument};
 use crate::error::{CouchError, CouchResult};
 use crate::types::design::DesignCreated;
 use crate::types::document::{DocumentCreatedResponse, DocumentCreatedResult, DocumentId};
+use crate::types::system::{PartitionInfo};
 use crate::types::find::{FindQuery, FindResult};
 use crate::types::index::{DatabaseIndexList, IndexFields};
 use crate::types::query::{QueriesCollection, QueriesParams, QueryParams};
@@ -68,6 +69,28 @@ impl Database {
     fn create_compact_path(&self, design_name: &str) -> String {
         let encoded_design = url_encode!(design_name);
         format!("{}/_compact/{}", self.name, encoded_design)
+    }
+
+    fn create_partition_path(&self, partition: &str, id: Option<&str>) -> String {
+        let mut partition_path =  format!("_partition/{}", &url_encode!(partition));
+        if let Some(path) = id {
+            partition_path = format!("{}/{}", partition_path, path);
+        }
+        self.create_raw_path(&partition_path)
+    }
+
+    pub async fn get_partition_info(&self, partition: &str) -> CouchResult<PartitionInfo> {
+        if !self.partitioned {
+            Err(CouchError::new(s!("The database must be partitioned!"), reqwest::StatusCode::NOT_IMPLEMENTED))
+        } else {
+            let response = self._client
+                .get(self.create_partition_path(partition, None), None)
+                .send()
+                .await?
+                .error_for_status()?;
+            let info = response.json().await?;
+            Ok(info)
+        }
     }
 
     /// Launches the compact process
@@ -242,8 +265,9 @@ impl Database {
         Ok(data.into_iter().map(|r| r.into()).collect())
     }
 
-    async fn _get_all_params<T: TypedCouchDocument>(
+    async fn get_documents<T:TypedCouchDocument>(
         &self,
+        docs_path: String,
         params: QueryParams,
     ) -> CouchResult<DocumentCollection<T>> {
 
@@ -251,7 +275,7 @@ impl Database {
         // to a GET call. It provides the same functionality
         let response = self
             ._client
-            .post(self.create_raw_path("_all_docs"), js!(&params), None)
+            .post(docs_path, js!(&params), None)
             .send()
             .await?
             .error_for_status()?;
@@ -481,7 +505,7 @@ impl Database {
 
         options.include_docs = Some(true);
 
-        self._get_all_params(options).await
+        self.get_documents(self.create_raw_path("_all_docs"), options).await
     }
 
     /// Finds a document in the database through a Mango query as raw Values.

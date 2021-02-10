@@ -39,7 +39,7 @@ pub struct ClusterInfo {
 pub struct SizeInfo {
     pub active: u64,
     pub external: u64,
-    pub file: u64,
+    pub file: Option<u64>, // Set as optional so as to reuse with partition info whichc doesn't contain file property
 }
 
 /// Database information
@@ -62,4 +62,14 @@ pub struct DbInfo {
     pub sizes: SizeInfo,
     pub update_seq: String,
     pub props: DbProperties,
+}
+
+/// Partition information
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PartitionInfo {
+    pub db_name: String,
+    pub partition: String,
+    pub doc_count: u64,
+    pub doc_del_count: u64,
+    pub sizes: SizeInfo,
 }

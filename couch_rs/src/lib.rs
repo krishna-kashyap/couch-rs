@@ -320,6 +320,31 @@ mod couch_rs_tests {
         }
 
         #[tokio::test]
+        async fn should_get_information_on_test_partition() {
+            let client = Client::new_local_test().unwrap();
+            let dbname = "should_get_information_on_test_partition";
+            let partition_name = "test-partition";
+            let dbw = client.partitioned_db(dbname).await;
+            assert!(dbw.is_ok());
+            assert!(client.exists(dbname).await.is_ok());
+            let db = dbw.unwrap();
+
+            let ndoc_result = db
+                .create(json!({
+                    "_id": format!("{}:doc1", partition_name),
+                    "thing": true
+                }))
+                .await;
+
+            assert!(ndoc_result.is_ok());
+
+            let info = db.get_partition_info("test-partition").await.expect("can not get partition info");
+            assert_eq!(info.partition, partition_name);
+            teardown(client, dbname).await;
+        }
+
+
+        #[tokio::test]
         async fn should_create_a_typed_document() {
             let client = Client::new_local_test().unwrap();
             let dbw = client.db("should_create_a_typed_document").await;
