@@ -569,6 +569,37 @@ impl Database {
         self.find(query).await
     }
 
+    async fn find_with_path<T: TypedCouchDocument>(&self, path: String, query: &FindQuery) -> CouchResult<DocumentCollection<T>> {
+        let response = self._client.post(path, js!(query), None).send().await?;
+        let status = response.status();
+        let data: FindResult<T> = response.json().await?;
+
+        if let Some(doc_val) = data.docs {
+            let documents: Vec<T> = doc_val
+                .into_iter()
+                .filter(|d| {
+                    // Remove _design documents
+                    let id: String = d.get_id().into_owned();
+                    !id.starts_with('_')
+                })
+                .collect();
+
+            let mut bookmark = Option::None;
+            let returned_bookmark = data.bookmark.unwrap_or_default();
+
+            if returned_bookmark != "nil" && !returned_bookmark.is_empty() {
+                // a valid bookmark has been returned
+                bookmark.replace(returned_bookmark);
+            }
+
+            Ok(DocumentCollection::new_from_documents(documents, bookmark))
+        } else if let Some(err) = data.error {
+            Err(CouchError::new(err, status))
+        } else {
+            Ok(DocumentCollection::default())
+        }
+    }
+
 
     /// Finds a document in the database through a Mango query.
     ///
@@ -606,34 +637,7 @@ impl Database {
     /// ```
     pub async fn find<T: TypedCouchDocument>(&self, query: &FindQuery) -> CouchResult<DocumentCollection<T>> {
         let path = self.create_raw_path("_find");
-        let response = self._client.post(path, js!(query), None).send().await?;
-        let status = response.status();
-        let data: FindResult<T> = response.json().await?;
-
-        if let Some(doc_val) = data.docs {
-            let documents: Vec<T> = doc_val
-                .into_iter()
-                .filter(|d| {
-                    // Remove _design documents
-                    let id: String = d.get_id().into_owned();
-                    !id.starts_with('_')
-                })
-                .collect();
-
-            let mut bookmark = Option::None;
-            let returned_bookmark = data.bookmark.unwrap_or_default();
-
-            if returned_bookmark != "nil" && !returned_bookmark.is_empty() {
-                // a valid bookmark has been returned
-                bookmark.replace(returned_bookmark);
-            }
-
-            Ok(DocumentCollection::new_from_documents(documents, bookmark))
-        } else if let Some(err) = data.error {
-            Err(CouchError::new(err, status))
-        } else {
-            Ok(DocumentCollection::default())
-        }
+        self.find_with_path(path, query).await
     }
 
     /// Saves a document to CouchDB. When the provided document includes both an `_id` and a `_rev`
